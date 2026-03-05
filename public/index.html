@@ -2,39 +2,101 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>WAYouT - Clean Version</title>
+    <title>WAYouT - Player & Comments</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-[#0f0f0f] text-white p-6">
-    <nav class="flex justify-between items-center mb-10 border-b border-zinc-800 pb-4">
-        <h1 class="text-red-600 text-3xl font-bold">WAYouT</h1>
-        <button onclick="document.getElementById('modal').classList.toggle('hidden')" class="bg-white text-black px-6 py-2 rounded-full font-bold">
-            + SUBIR
-        </button>
+<body class="bg-[#0f0f0f] text-white p-4 md:p-8 font-sans">
+    
+    <nav class="flex justify-between items-center mb-10">
+        <h1 class="text-red-600 text-3xl font-bold tracking-tighter">WAYouT</h1>
+        <button onclick="toggleModal()" class="bg-white text-black px-6 py-2 rounded-full font-bold hover:bg-zinc-200">Subir</button>
     </nav>
 
-    <div id="modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center p-4">
-        <form action="/upload" method="POST" enctype="multipart/form-data" class="bg-zinc-900 p-8 rounded-xl border border-zinc-700 w-full max-w-md flex flex-col gap-4">
-            <input type="text" name="videoTitle" placeholder="Título" class="bg-zinc-800 p-3 rounded" required>
-            <input type="file" name="videoFile" accept="video/*" required>
-            <button type="submit" class="bg-red-600 py-3 rounded font-bold">PUBLICAR</button>
-            <button type="button" onclick="document.getElementById('modal').classList.add('hidden')" class="text-zinc-400">Cancelar</button>
+    <div class="flex flex-col lg:flex-row gap-8">
+        <div id="mainPlayer" class="hidden flex-1">
+            <video id="videoElement" controls class="w-full rounded-2xl bg-black border border-zinc-800 shadow-2xl mb-4"></video>
+            <h2 id="videoTitle" class="text-2xl font-bold mb-4"></h2>
+            
+            <div class="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
+                <h3 class="font-bold mb-4">Comentarios</h3>
+                <div class="flex gap-2 mb-6">
+                    <input id="commentInput" type="text" placeholder="Escribe un comentario..." class="flex-1 bg-zinc-800 p-3 rounded-lg outline-none focus:ring-1 ring-red-600">
+                    <button onclick="sendComment()" class="bg-red-600 px-4 py-2 rounded-lg font-bold">Enviar</button>
+                </div>
+                <div id="commentsList" class="space-y-4">
+                    </div>
+            </div>
+        </div>
+
+        <div id="videoGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full lg:max-w-xs">
+            </div>
+    </div>
+
+    <div id="modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50">
+        <form action="/upload" method="POST" enctype="multipart/form-data" class="bg-zinc-900 p-8 rounded-2xl border border-zinc-700 w-full max-w-md">
+            <h2 class="text-xl font-bold mb-6">Nuevo Video</h2>
+            <input type="text" name="videoTitle" placeholder="Título" class="w-full bg-zinc-800 p-3 rounded mb-4" required>
+            <input type="file" name="videoFile" accept="video/*" class="mb-6 block" required>
+            <div class="flex gap-2">
+                <button type="submit" class="flex-1 bg-red-600 py-3 rounded-lg font-bold">Publicar</button>
+                <button type="button" onclick="toggleModal()" class="flex-1 bg-zinc-800 py-3 rounded-lg">Cerrar</button>
+            </div>
         </form>
     </div>
 
-    <div id="grid" class="grid grid-cols-1 md:grid-cols-4 gap-6"></div>
-
     <script>
-        async function load() {
-            const r = await fetch('/api/videos');
-            const videos = await r.json();
-            document.getElementById('grid').innerHTML = videos.map(v => `
-                <div class="cursor-pointer">
-                    <video src="/videos/${v.file}" class="rounded-xl w-full" controls></video>
-                    <h3 class="font-bold mt-2">${v.title}</h3>
+        let currentVideoId = null;
+
+        async function loadVideos() {
+            const res = await fetch('/api/videos');
+            const videos = await res.json();
+            const grid = document.getElementById('videoGrid');
+            
+            grid.innerHTML = videos.map(v => `
+                <div onclick="selectVideo('${v.id}', '${v.file}', '${v.title}')" class="cursor-pointer group">
+                    <img src="${v.thumb}" class="rounded-xl w-full border border-zinc-800 group-hover:border-red-600">
+                    <h4 class="font-bold mt-2 text-sm">${v.title}</h4>
                 </div>`).join('');
         }
-        load();
+
+        async function selectVideo(id, file, title) {
+            currentVideoId = id;
+            document.getElementById('mainPlayer').classList.remove('hidden');
+            document.getElementById('videoElement').src = '/videos/' + file;
+            document.getElementById('videoTitle').innerText = title;
+            document.getElementById('videoElement').play();
+            
+            // Cargar comentarios del video seleccionado
+            const res = await fetch('/api/videos');
+            const videos = await res.json();
+            const video = videos.find(v => v.id === id);
+            renderComments(video.comments);
+        }
+
+        async function sendComment() {
+            const input = document.getElementById('commentInput');
+            if (!input.value || !currentVideoId) return;
+
+            const res = await fetch('/api/comments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ videoId: currentVideoId, text: input.value })
+            });
+            const data = await res.json();
+            renderComments(data.comments);
+            input.value = '';
+        }
+
+        function renderComments(comments) {
+            const list = document.getElementById('commentsList');
+            list.innerHTML = comments.map(c => `
+                <div class="bg-zinc-800 p-3 rounded-lg text-sm border border-zinc-700">${c}</div>
+            `).reverse().join('');
+        }
+
+        function toggleModal() { document.getElementById('modal').classList.toggle('hidden'); }
+        
+        loadVideos();
     </script>
 </body>
 </html>
